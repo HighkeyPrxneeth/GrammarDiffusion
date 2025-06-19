@@ -1,9 +1,24 @@
-import random
 import csv
+import random
 import re
-from typing import List, Tuple
+from typing import List
+
+# Import libraries for data handling
+from datasets import load_dataset
+from tqdm import tqdm
+import nltk
+
+# --- Configuration ---
+# Make sure you have run nltk.download('punkt') once before
+try:
+    nltk.data.find('tokenizers/punkt')
+except nltk.data.LookupError:
+    print("NLTK 'punkt' model not found.")
+    nltk.download('punkt')
+    nltk.data.find('tokenizers/punkt')
 
 
+# --- Re-usable Corruption Engine Class ---
 class CorruptionEngine:
     """
     A comprehensive engine to programmatically introduce a wide variety of grammatical
@@ -11,8 +26,6 @@ class CorruptionEngine:
     """
 
     def __init__(self):
-        # --- Word Lists for Various Error Types ---
-
         # (Incorrect -> Correct) mapping for swapping
         self.homophones = {
             "your": "you're", "you're": "your", "their": "there", "there": "their",
@@ -28,7 +41,7 @@ class CorruptionEngine:
         self.aux_verbs = {"is", "am", "are", "was", "were", "be", "been", "has", "have", "had", "do", "does", "did",
                           "will", "would", "shall", "should", "may", "might", "must", "can", "could"}
 
-        # A dictionary of all possible corruption methods.
+        # A list of all possible corruption methods for random selection.
         self.corruption_methods = [
             self.replace_with_homophone,
             self.replace_with_typo,
@@ -39,8 +52,6 @@ class CorruptionEngine:
             self.add_unnecessary_punctuation,
             self.swap_adjacent_words
         ]
-
-    # --- Replacement Errors ---
 
     def replace_with_homophone(self, words: List[str]) -> List[str]:
         possible_indices = [i for i, word in enumerate(words) if word in self.homophones]
@@ -83,8 +94,6 @@ class CorruptionEngine:
                 return words
         return words
 
-    # --- Deletion Errors ---
-
     def delete_word_type(self, words: List[str]) -> List[str]:
         word_type_to_delete = random.choice([self.articles, self.prepositions, self.aux_verbs])
         possible_indices = [i for i, word in enumerate(words) if word in word_type_to_delete]
@@ -102,8 +111,6 @@ class CorruptionEngine:
             words[-1] = words[-1][:-1]
         return words
 
-    # --- Addition Errors ---
-
     def add_redundant_word(self, words: List[str]) -> List[str]:
         if not words: return words
         idx = random.randint(0, len(words) - 1)
@@ -117,18 +124,13 @@ class CorruptionEngine:
                 words[idx] += ','
         return words
 
-    # --- Reordering Errors ---
-
     def swap_adjacent_words(self, words: List[str]) -> List[str]:
         if len(words) < 2: return words
         idx = random.randint(0, len(words) - 2)
         words[idx], words[idx + 1] = words[idx + 1], words[idx]
         return words
 
-    # --- Master Corruption Method ---
-
     def apply_random_corruption(self, words: List[str]) -> List[str]:
-        """Selects and applies one of the defined corruption methods at random."""
         method = random.choice(self.corruption_methods)
         return method(words)
 
@@ -137,71 +139,84 @@ class CorruptionEngine:
 
 if __name__ == "__main__":
     # --- Configuration ---
-    CORRECT_SENTENCES = [
-        "The quick brown fox jumps over the lazy dog.",
-        "She sells seashells by the seashore, and the shells she sells are surely seashells.",
-        "I am learning to build a diffusion model from scratch, which is a fascinating process.",
-        "The weather is beautiful today in the city; I think I will go for a walk.",
-        "He decided to write a book about his grand adventures across the seven seas.",
-        "They are planning a trip to the mountains next month if they can get time off work.",
-        "What is your favorite type of music to listen to while you are studying?",
-        "The cat, which is very fluffy, is sleeping peacefully on the new sofa.",
-        "My friend and I are going to the movies tonight to watch the latest blockbuster.",
-        "Proper grammar is critically important for clear and effective communication.",
-        "Despite the heavy rain, the dedicated team continued to work on the project.",
-        "Could you please tell me where the nearest library is located?"
-    ]
+    OUTPUT_FILE = "data/gec_dataset_from_c4.tsv"
 
-    OUTPUT_FILE = "data/gec_dataset.tsv"
-    NUM_SAMPLES = 5000
-    MIN_ERRORS = 2  # The minimum number of errors to apply to each sentence
-    MAX_ERRORS = 4  # The maximum number of errors to apply to each sentence
+    # Set this to the desired size of your final dataset.
+    # The script will stop once this many samples are generated.
+    NUM_SAMPLES = 100000  # Generate 100k samples for a decent start
 
+    # Error application settings
+    MIN_ERRORS = 2
+    MAX_ERRORS = 4
+
+    # Sentence filtering settings
+    MIN_WORDS = 8
+    MAX_WORDS = 50
+
+    # --- Initialization ---
     engine = CorruptionEngine()
 
-    print(f"Generating {NUM_SAMPLES} sentence pairs, each with {MIN_ERRORS}-{MAX_ERRORS} errors...")
+    print("Loading C4 dataset in streaming mode. This will not download the whole dataset.")
+    # We use 'en.noblocklist' which is a cleaner English subset of C4.
+    # `streaming=True` is essential to avoid downloading terabytes of data.
+    streamed_dataset = load_dataset('c4', 'en.noblocklist', streaming=True, split='train', trust_remote_code=True)
 
-    with open(OUTPUT_FILE, "w", newline="", encoding="utf-8") as f:
+    generated_count = 0
+
+    print(f"Starting dataset generation. Target: {NUM_SAMPLES} samples.")
+
+    with open(OUTPUT_FILE, "w", newline="", encoding="utf-8") as f, tqdm(total=NUM_SAMPLES) as pbar:
         writer = csv.writer(f, delimiter='\t')
         writer.writerow(["incorrect_sentence", "correct_sentence"])  # Header
 
-        generated_count = 0
-        while generated_count < NUM_SAMPLES:
-            correct_sentence = random.choice(CORRECT_SENTENCES)
-            words = re.findall(r"[\w']+|[.,!?;]", correct_sentence.lower())
+        # Iterate through documents in the C4 stream
+        for doc in streamed_dataset:
+            if generated_count >= NUM_SAMPLES:
+                break  # Stop when we have enough samples
 
-            # Determine the target number of errors for this specific sentence
-            num_errors_to_apply = random.randint(MIN_ERRORS, MAX_ERRORS)
+            # Extract text and split into sentences using NLTK for accuracy
+            text = doc['text']
+            sentences = nltk.sent_tokenize(text)
 
-            corrupted_words = words.copy()
-            applied_errors_count = 0
-            attempts = 0  # Safety break to prevent infinite loops
+            for correct_sentence in sentences:
+                if generated_count >= NUM_SAMPLES:
+                    break
 
-            # This loop ensures that we successfully apply the target number of distinct errors.
-            while applied_errors_count < num_errors_to_apply and attempts < 15:
-                # Make a copy to check if the corruption method actually made a change
-                words_before_corruption = corrupted_words.copy()
+                # --- 1. Filter Sentences ---
+                # Remove newlines and excess whitespace
+                clean_sentence = correct_sentence.replace('\n', ' ').strip()
+                words = clean_sentence.split()
 
-                # Apply a random corruption
-                corrupted_words = engine.apply_random_corruption(corrupted_words)
+                # Skip sentences that are too short, too long, or contain lists/code snippets.
+                if not (MIN_WORDS <= len(words) <= MAX_WORDS):
+                    continue
+                if any(char in clean_sentence for char in ['{', '}', '<', '>', '=', '*']):
+                    continue
 
-                # Check if the sentence was actually modified. This is key.
-                if corrupted_words != words_before_corruption:
-                    applied_errors_count += 1
+                # --- 2. Apply Corruptions ---
+                # Pre-process: lowercase and split into words/punctuation.
+                words_and_punc = re.findall(r"[\w']+|[.,!?;]", clean_sentence.lower())
 
-                attempts += 1
+                num_errors_to_apply = random.randint(MIN_ERRORS, MAX_ERRORS)
+                corrupted_words = words_and_punc.copy()
+                applied_errors_count = 0
+                attempts = 0  # Safety break
 
-            # Only write the sample if we successfully applied enough errors
-            if applied_errors_count >= MIN_ERRORS:
-                # Post-process: join words back into a sentence, handling punctuation spacing correctly.
-                incorrect_sentence = " ".join(corrupted_words).replace(" ,", ",").replace(" .", ".").strip()
+                while applied_errors_count < num_errors_to_apply and attempts < 20:
+                    words_before_corruption = corrupted_words.copy()
+                    corrupted_words = engine.apply_random_corruption(corrupted_words)
 
-                # Final check to ensure we are not writing an empty or unchanged sentence
-                if incorrect_sentence and incorrect_sentence != correct_sentence.lower():
-                    writer.writerow([incorrect_sentence, correct_sentence])
-                    generated_count += 1
+                    if corrupted_words != words_before_corruption:
+                        applied_errors_count += 1
+                    attempts += 1
 
-                    if generated_count % 500 == 0:
-                        print(f"  ... {generated_count}/{NUM_SAMPLES} generated.")
+                # --- 3. Save the Pair ---
+                if applied_errors_count >= MIN_ERRORS:
+                    incorrect_sentence = " ".join(corrupted_words).replace(" ,", ",").replace(" .", ".").strip()
 
-    print(f"\nDataset with {NUM_SAMPLES} complex samples successfully generated at {OUTPUT_FILE}")
+                    if incorrect_sentence and incorrect_sentence != clean_sentence.lower():
+                        writer.writerow([incorrect_sentence, clean_sentence])
+                        generated_count += 1
+                        pbar.update(1)
+
+    print(f"\nDataset generation complete. {generated_count} samples saved to {OUTPUT_FILE}")
