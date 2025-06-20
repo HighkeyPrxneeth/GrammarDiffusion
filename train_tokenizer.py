@@ -3,7 +3,6 @@ from tokenizers import Tokenizer
 from tokenizers.models import WordPiece
 from tokenizers.trainers import WordPieceTrainer
 from tokenizers.pre_tokenizers import Whitespace
-from tqdm import tqdm
 
 # --- Configuration ---
 DATASET_FILE = "data/gec_dataset_from_c4.tsv"  # The large dataset you just created
