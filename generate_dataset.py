@@ -61,10 +61,12 @@ class CorruptionEngine:
         return words
 
     def replace_with_typo(self, words: List[str]) -> List[str]:
-        if not words: return words
+        if not words:
+            return words
         word_idx = random.randint(0, len(words) - 1)
         word = words[word_idx]
-        if len(word) < 3: return words
+        if len(word) < 3:
+            return words
         char_idx = random.randint(0, len(word) - 1)
         typo_type = random.choice(['swap', 'insert', 'delete', 'replace'])
         chars = list(word)
@@ -82,13 +84,24 @@ class CorruptionEngine:
 
     def corrupt_subject_verb_agreement(self, words: List[str]) -> List[str]:
         for i, word in enumerate(words):
-            if word == "is": words[i] = "are"; return words
-            if word == "are": words[i] = "is"; return words
-            if word == "was": words[i] = "were"; return words
-            if word == "were": words[i] = "was"; return words
-            if word == "has": words[i] = "have"; return words
-            if word == "have" and i > 0 and words[i - 1].lower() not in ['i', 'we', 'you', 'they']: words[
-                i] = "has"; return words
+            if word == "is":
+                words[i] = "are"
+                return words
+            if word == "are":
+                words[i] = "is"
+                return words
+            if word == "was":
+                words[i] = "were"
+                return words
+            if word == "were":
+                words[i] = "was"
+                return words
+            if word == "has":
+                words[i] = "have"
+                return words
+            if word == "have" and i > 0 and words[i - 1].lower() not in ['i', 'we', 'you', 'they']:
+                words[i] = "has"
+                return words
             if word.endswith('s') and len(word) > 2 and word not in self.aux_verbs:
                 words[i] = word[:-1]
                 return words
@@ -112,7 +125,8 @@ class CorruptionEngine:
         return words
 
     def add_redundant_word(self, words: List[str]) -> List[str]:
-        if not words: return words
+        if not words:
+            return words
         idx = random.randint(0, len(words) - 1)
         words.insert(idx, words[idx])
         return words
@@ -125,7 +139,8 @@ class CorruptionEngine:
         return words
 
     def swap_adjacent_words(self, words: List[str]) -> List[str]:
-        if len(words) < 2: return words
+        if len(words) < 2:
+            return words
         idx = random.randint(0, len(words) - 2)
         words[idx], words[idx + 1] = words[idx + 1], words[idx]
         return words

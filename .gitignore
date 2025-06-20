@@ -1,2 +1,3 @@
-/data
-/.idea
+data/
+.idea/
+.idea/vcs.xml
